@@ -55,7 +55,7 @@ data7 <- data6 %>% select(-contains("Unique.Visit"))
 
 #check to make sure we have the correct columns remaining
 dplyr::glimpse(data7)
-utils::summary(data7)
+base::summary(data7)
 
 #last step is to remove any NA observations
 processed_data <- stats::na.omit(data7)
