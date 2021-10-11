@@ -4,63 +4,69 @@
 #this script loads the raw data, processes and cleans it 
 #and saves it as Rds file in the processed_data folder
 
+
+#the raw data for this exercise comes from the following citation:
+#McKay, Brian et al. (2020), Virulence-mediated infectiousness and activity trade-offs 
+#and their impact on transmission potential of patients infected with influenza, Dryad, Dataset,
+#https://doi.org/10.5061/dryad.51c59zw4v
+
 #load needed packages. make sure they are installed.
-library(readxl) #for loading Excel files
-library(dplyr) #for data processing
 library(here) #to set paths
+library(dplyr) #for data processing
 
 #path to data
 #note the use of the here() package and not absolute paths
-data_location <- here::here("data","raw_data","exampledata.xlsx")
+data_location <- here::here("data","raw_data","SympAct_Any_Pos.Rda")
 
 #load data. 
-#note that for functions that come from specific packages (instead of base R)
-# I often specify both package and function like so
-#package::function() that's not required one could just call the function
-#specifying the package makes it clearer where the function "lives",
-#but it adds typing. You can do it either way.
-rawdata <- readxl::read_excel(data_location)
+#because the data is in an .Rda format, we can use the "ReadRDS" function in base R.
+#the typical "load" function does not work (data is RDS not RDA)
+rawdata <- base::readRDS(data_location)
 
 #take a look at the data
 dplyr::glimpse(rawdata)
 
-#dataset is so small, we can print it to the screen.
-#that is often not possible.
-print(rawdata)
+#based on the assignment directions, the first step is to remove all variables that have "Score"
+#or "Total" or "FluA" or "FluB" or "Dxname" or "Activity" in the name as well as "Unique.Visit"
+#this can be accomplished using the select function in dplyr / tidyverse
 
-# looks like we have measurements for height (in centimeters) and weight (in kilogram)
+#while we could pipe this into one operation, separating each line makes de-bugging issues easier
 
-# there are some problems with the data: 
-# There is an entry which says "sixty" instead of a number. 
-# Does that mean it should be a numeric 60? It somehow doesn't make
-# sense since the weight is 60kg, which can't happen for a 60cm person (a baby)
-# Since we don't know how to fix this, we need to remove the person.
-# This "sixty" entry also turned all Height entries into characters instead of numeric.
-# We need to fix that too.
-# Then there is one person with a height of 6. 
-# that could be a typo, or someone mistakenly entered their height in feet.
-# Since we unfortunately don't know, we'll have to remove this person.
-# similarly, there is a person with weight of 7000, which is impossible,
-# and one person with missing weight.
-# to be able to analyze the data, we'll remove those 5 individuals
+#remove variables containing "Score"
+data1 <- rawdata %>% select(-contains("Score"))
 
-# this is one way of doing it. Note that if the data gets updated, 
-# we need to decide if the thresholds are ok (newborns could be <50)
+#remove variables containing "Total"
+data2 <- data1 %>% select(-contains("Total"))
 
-processeddata <- rawdata %>% dplyr::filter( Height != "sixty" ) %>% 
-                             dplyr::mutate(Height = as.numeric(Height)) %>% 
-                             dplyr::filter(Height > 50 & Weight < 1000)
+#remove variables containing "FluA"
+data3 <- data2 %>% select(-contains("FluA"))
 
-# save data as RDS
-# I suggest you save your processed and cleaned data as RDS or RDA/Rdata files. 
-# This preserves coding like factors, characters, numeric, etc. 
-# If you save as CSV, that information would get lost.
-# See here for some suggestions on how to store your processed data:
-# http://www.sthda.com/english/wiki/saving-data-into-r-data-format-rds-and-rdata
+#remove variables containing "FluB"
+data4 <- data3 %>% select(-contains("FluB"))
+
+#remove variables containing "Dxname"
+data5 <- data4 %>% select(-contains("Dxname"))
+
+#remove variables containing "Activity"
+data6 <- data5 %>% select(-contains("Activity"))
+
+#remove variable "Unique.Visit"
+data7 <- data6 %>% select(-contains("Unique.Visit"))
+
+#check to make sure we have the correct columns remaining
+dplyr::glimpse(data7)
+utils::summary(data7)
+
+#last step is to remove any NA observations
+processed_data <- stats::na.omit(data7)
+
+#processed_data has 730 observations and 32 variables, which is our goal.
+#now we can save the data
 
 # location to save file
 save_data_location <- here::here("data","processed_data","processeddata.rds")
 
-saveRDS(processeddata, file = save_data_location)
+# save data as RDS
+saveRDS(processed_data, file = save_data_location)
 
 
