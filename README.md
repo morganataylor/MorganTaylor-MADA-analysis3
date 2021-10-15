@@ -17,8 +17,8 @@ This repository is created from a template for a data analysis project using R, 
 # Repository content 
 
 * The original data is in the `raw_data` folder. 
-* The `processing_code` folder contains R scripts which load the raw data, perform a bit of cleaning, and save the result in the `processed_data` folder.
-* The `analysis_code` folder contains an R script which loads the processed data, fits a simple model, and produces a figure and some numeric output, which is saved in the `results` folder. It also contains an R script that conducts a brief exporatory data analysis.
+* The `processing_code` folder contains an R script which load the raw data, perform a bit of cleaning, and save the result in the `processed_data` folder.
+* The `analysis_code` folder contains an R script which loads the processed data, fits simple models, and produces outputs, which are saved in the `results` folder. It also contains an R script that conducts a brief exploratory data analysis.
 * The remaining content is copied from the original templates as examples. Details as follows:
 * The `products` folder contains an example `bibtex` and CSL style file for references. Those files are used by the example manuscript, poster and slides.
 * The `poster` and `slides` folders contain very basic examples of posters and slides made with R Markdown. Note that especially for slides, there are many different formats. You might find a different format more suitable. Check the R Markdown documentation. 

@@ -1,4 +1,8 @@
-Place all results from your analysis (figures, tables, computed values) here.
+Results from the analysis script
 
-Depending on project size, you can place everything in this folder, or use sub-folders to further structure things. For instance you could have separate figures/tables/numeric folders, or if you analyze multiple datasets, you could have folders for each dataset, or if you apply several distinct models you could have folders for each model. The structure is up to you, just make it understandable for you and others.
-
+lm = linear regression model
+log = logistic regression model
+sumtable = summary table of the model fit
+plot = box and whisker effect plot
+gftable = table of goodness of fit measures
+models_comparison = comparison of simple (one predictor) vs multivariable models
