@@ -1,0 +1,241 @@
+---
+title: "Module 9 Exercise (Analysis #2)"
+author: "Morgan Taylor"
+date: "10/19/2021"
+output: html_document
+---
+
+# Module 9: Evaluating Model Fits
+
+This RMD corresponds to the assignment in [Module 9 for MADA 2021](https://andreashandel.github.io/MADAcourse/Assessment_Model_Evaluation.html). It loads the processed data and conducts some model evaluation processes. 
+
+<br>
+
+## Libraries required:
+* here: for data loading/saving
+* tidyverse: for data management
+* tidymodels: for data modeling
+* skimr: for variable summaries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#libraries required
+library(here) #for data loading/saving
+library(tidyverse) #for data management
+library(tidymodels) #for data modeling
+library(skimr) #for variable summaries
+
+#set global environment to avoid scientific notation
+options(scipen = 999)
+```
+
+<br>
+
+## Load Data
+Load the processed data from the 'processed_data' folder in the project file.
+```{r load data}
+#path to data
+#note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed_data","processeddata.rds")
+
+#load data. 
+data <- readRDS(data_location)
+
+#summary of data using skimr package
+skimr::skim(data)
+```
+
+<br>
+
+## Data Splitting
+
+Task: Write a code that takes the data and splits it randomly into a train and test datasets.The code for this section comes from the "Data Splitting" portion of the [Tidyverse Tutorial](https://www.tidymodels.org/start/recipes/). 
+
+```{r data splitting}
+#fix the random numbers by setting the seed
+#this enables the analysis to be reproducible when random numbers are used
+set.seed(222)
+
+#put 3/4 of data into the training set
+data_split <- rsample::initial_split(data, prop = 3/4)
+
+#create dataframes for the two sets:
+train_data <- rsample::training(data_split)
+test_data <- rsample::testing(data_split)
+```
+
+<br>
+
+---
+
+<br>
+
+# Logistic Regression for Categorical Outcome: Nausea
+
+<br>
+
+## Workflow creation and model fitting
+
+Task: Create a simple recipe that fits categorical outcome of interest (Nausea) to all predictors. The code for this section comes from the "Create Recipes" portion of the [Tidyverse Tutorial](https://www.tidymodels.org/start/recipes/). Ignore the concept of roles and features discussed in the tutorial.
+
+```{r workflow and fit}
+#initiate a new recipe using 'recipe' function
+nausea_rec <- recipes::recipe(Nausea ~., data = train_data)
+
+#build a model specfiication using 'parsnip' package
+lr_mod <- parsnip::logistic_reg() %>%
+          parsnip::set_engine("glm")
+
+#use 'workflows' package to create a simple workflow that fits a logistic model to all predictors using glm function
+nausea_wflow <- workflows::workflow() %>%
+                workflows::add_model(lr_mod) %>%
+                workflows::add_recipe(nausea_rec)
+nausea_wflow
+#0 recipe steps?
+
+#use function to prepare the recipe and train the model from the resulting predictors
+nausea_fit <- nausea_wflow %>%
+                parsnip::fit(data = train_data)
+
+#create tibble for model fit using broom and extract
+nausea_fit %>%
+  workflowsets::extract_fit_parsnip() %>%
+  broom::tidy()
+
+#create tibble for model fit using broom and extract
+#use mutate_if to reduce the number of decimal places
+nausea_tibble <- nausea_fit %>%
+                  workflowsets::extract_fit_parsnip() %>%
+                  broom::tidy() %>%
+                  dplyr::mutate_if(is.numeric, round, 3)
+nausea_tibble
+```
+
+<br>
+
+## Model 1 evaulation
+
+Task: Examine the predictions, ROC and ROC-AUC for the data. Apply it to both the training and test data. The code for this section comes from the "Use a trained workflow" portion of the [Tidyverse Tutorial](https://www.tidymodels.org/start/recipes/) 
+```{r model 1 evaluation}
+#predict the nausea variable using the test data
+stats::predict(nausea_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+nausea_aug_test <- tune::augment(nausea_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#generate ROC curve for test data
+nausea_aug_test %>%
+  yardstick::roc_curve(truth = Nausea, .pred_Yes, event_level = "second") %>%
+  workflowsets::autoplot()
+
+#estimate the area under the curve for test data
+nausea_aug_test %>%
+  yardstick::roc_auc(truth = Nausea, .pred_Yes, event_level = "second")
+#ROC-AUC = 0.724
+#Suggests the model may be useful in predicting the Nausea outcome
+
+#predict the nausea variable using the training data
+stats::predict(nausea_fit, train_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+nausea_aug_train <- tune::augment(nausea_fit, train_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#generate ROC curve for training data
+nausea_aug_train %>%
+  yardstick::roc_curve(truth = Nausea, .pred_Yes, event_level = "second") %>%
+  workflowsets::autoplot()
+
+#estimate the area under the curve for training data
+nausea_aug_train %>%
+  yardstick::roc_auc(truth = Nausea, .pred_Yes, event_level = "second")
+#ROC-AUC = 0.787
+#Suggests the model may be useful in predicting the Nausea outcome
+#slightly better value than ROC-AUC using test data but not extremely different
+```
+
+<br>
+
+## Alternative model
+
+Task: Re-do the fitting but now with a model that only fits the main predictor (RunnyNose) to the categorical outcome (Nausea). 
+
+First, set up a new recipe and create a new workflow function/fit
+```{r alternative workflow and fit}
+#initiate a new recipe using 'recipe' function
+nausea_rec_RN <- recipes::recipe(Nausea ~ RunnyNose, data = train_data)
+
+#use the same model specification defined above (lr_mod)
+
+#use 'workflows' package to create a simple workflow that fits a logistic model to all predictors using glm function
+nausea_wflow_RN <- workflows::workflow() %>%
+                workflows::add_model(lr_mod) %>%
+                workflows::add_recipe(nausea_rec_RN)
+nausea_wflow_RN
+#0 recipe steps?
+
+#use function to prepare the recipe and train the model from the resulting predictors
+nausea_fit_RN <- nausea_wflow_RN %>%
+                  parsnip::fit(data = train_data)
+
+#create tibble for model fit using broom and extract
+nausea_fit_RN %>%
+  workflowsets::extract_fit_parsnip() %>%
+  broom::tidy()
+
+#create tibble for model fit using broom and extract
+#use mutate_if to reduce the number of decimal places
+nausea_tibble_RN <- nausea_fit_RN %>%
+                      workflowsets::extract_fit_parsnip() %>%
+                      broom::tidy() %>%
+                      dplyr::mutate_if(is.numeric, round, 3)
+nausea_tibble_RN
+```
+
+
+Now examine the predictions, ROC and ROC-AUC for the data. Apply it to both the training and test data.  
+```{r alternative evaluation}
+#predict the nausea variable using the test data
+stats::predict(nausea_fit_RN, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+nausea_aug_test_RN <- tune::augment(nausea_fit_RN, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#generate ROC curve for test data
+nausea_aug_test_RN %>%
+  yardstick::roc_curve(truth = Nausea, .pred_Yes, event_level = "second") %>%
+  workflowsets::autoplot()
+#almost a diagonal line
+
+#estimate the area under the curve for test data
+nausea_aug_test_RN %>%
+  yardstick::roc_auc(truth = Nausea, .pred_Yes, event_level = "second")
+#ROC-AUC = 0.466
+#Suggests the model may not be that useful in predicting the Nausea outcome
+
+#predict the nausea variable using the training data
+stats::predict(nausea_fit_RN, train_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+nausea_aug_train_RN <- tune::augment(nausea_fit_RN, train_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#generate ROC curve for training data
+nausea_aug_train_RN %>%
+  yardstick::roc_curve(truth = Nausea, .pred_Yes, event_level = "second") %>%
+  workflowsets::autoplot()
+#almost a diagonal line
+
+#estimate the area under the curve for training data
+nausea_aug_train_RN %>%
+  yardstick::roc_auc(truth = Nausea, .pred_Yes, event_level = "second")
+#ROC-AUC = 0.519
+#Suggests the model may be not be that useful in predicting the Nausea outcome
+#slightly better value than ROC-AUC using test data but not extremely different
+#approx. same amount of difference for the test/train in model 1
+```
