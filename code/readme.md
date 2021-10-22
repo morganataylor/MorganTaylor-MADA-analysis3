@@ -1,6 +1,6 @@
 THe 'processing_code' folder contains an R script that loads, cleans, and exports the processed data.
 
-The 'analysis_code' folder contains two R scripts. 'exploration.R' conducts a brief exploratory data analysis, and 'analysisscript.R' loads the processed data and fits various models.
+The 'analysis_code' folder contains two R scripts and an .Rmd.
 
 
 Further details:
@@ -34,3 +34,14 @@ analysisscript.R
  (5) Fit a logistic model to the categorical outcome using only the main predictor of interest
  (6) Fit another logistic model to the categorical outcome using all (important) predictors of interest
  (7) Compare model results for models created in steps (5) and (6)
+
+analysis2.Rmd
+* this script evaluates the logistic regression and linear regression models
+* main predictor of interest = RunnyNose
+* continuous outcome of interest = BodyTemp
+* categorical outcome of interest = Nausea
+* overall steps for each model type:
+ (1) data splitting
+ (2) workflow creation and model fitting
+ (3) model evaluation with all predictors
+ (4) model evaluation with only main predictor

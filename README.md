@@ -4,25 +4,20 @@ This repository reflects the materials and methods used in the exercise assigned
 
 # Pre-requisites
 
-This repository is created from a template for a data analysis project using R, Rmarkdown (and variants, e.g. bookdown), Github and a reference manager that can handle bibtex. It is also assumed that you have a word processor installed (e.g. MS Word or [LibreOffice](https://www.libreoffice.org/)). You need that software stack to make use of this repository and template.
+This repository is created from a template for a data analysis project using R, Rmarkdown (and variants, e.g. bookdown), Github and a reference manager that can handle bibtex. It is also assumed that you have a word processor installed (e.g. MS Word or [LibreOffice](https://www.libreoffice.org/)). You need that software stack to make use of this repository.
 
 # Repository structure
 
-* All data goes into the subfolders inside the `data` folder.
-* All code goes into the `code` folder or subfolders.
-* All results (figures, tables, computed values) go into `results` folder or subfolders.
-* All products (manuscripts, supplement, presentation slides, web apps, etc.) go into `products` subfolders.
+* All data are in the subfolders inside the `data` folder.
+* All code is in the `code` folder or subfolders.
+* All results (figures, tables, computed values) are in `results` folder or subfolders.
 * See the various `readme.md` files in those folders for some more information.
 
 # Repository content 
 
 * The original data is in the `raw_data` folder. 
 * The `processing_code` folder contains an R script which load the raw data, perform a bit of cleaning, and save the result in the `processed_data` folder.
-* The `analysis_code` folder contains an R script which loads the processed data, fits simple models, and produces outputs, which are saved in the `results` folder. It also contains an R script that conducts a brief exploratory data analysis.
-* The remaining content is copied from the original templates as examples. Details as follows:
-* The `products` folder contains an example `bibtex` and CSL style file for references. Those files are used by the example manuscript, poster and slides.
-* The `poster` and `slides` folders contain very basic examples of posters and slides made with R Markdown. Note that especially for slides, there are many different formats. You might find a different format more suitable. Check the R Markdown documentation. 
-* The  `manuscript` folder contains a template for a report written in Rmarkdown (bookdown, to be precise).
+* The `analysis_code` folder contains three different codes to analyze the data. See the `readme.md` in the folder for more information.
 
 # Data information
 
