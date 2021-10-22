@@ -239,3 +239,129 @@ nausea_aug_train_RN %>%
 #slightly better value than ROC-AUC using test data but not extremely different
 #approx. same amount of difference for the test/train in model 1
 ```
+
+## Module 9 Part 2
+
+#### By Joe Martin
+
+Set up the linear model with the same code from above. The outcome of interest is now BodyTemp, the one continuous variable. Test this against all other variables to see if there are any significant relationships.
+
+```{r linear-model-setup1}
+# I'm continuing to use the same data and code as in Part 1. 
+# In this part, the outcome variable will be BODY TEMPERATURE and will use a LINEAR MODEL
+
+#initiate a new recipe using 'recipe' function
+bt_rec <- recipes::recipe(BodyTemp ~., data = train_data)
+
+#build a model specfiication using 'parsnip' package
+lm_mod <- parsnip::linear_reg() %>%
+          parsnip::set_engine("lm")
+```
+
+```{r}
+#use 'workflows' package to create a simple workflow that fits a logistic model to all predictors using glm function
+bt_wflow <- workflows::workflow() %>%
+                workflows::add_model(lm_mod) %>%
+                workflows::add_recipe(bt_rec)
+#0 recipe steps?
+
+#use function to prepare the recipe and train the model from the resulting predictors
+bt_fit <- bt_wflow %>%
+                parsnip::fit(data = train_data)
+
+#create tibble for model fit using broom and extract
+bt_fit %>%
+  workflowsets::extract_fit_parsnip() %>%
+  broom::tidy()
+```
+
+```{r}
+#create tibble for model fit using broom and extract
+#use mutate_if to reduce the number of decimal places
+#increase number of decimal places to see significant p-values
+bt_tibble <- bt_fit %>%
+                  workflowsets::extract_fit_parsnip() %>%
+                  broom::tidy() %>%
+                  dplyr::mutate_if(is.numeric, round, 6)
+bt_tibble
+```
+
+```{r linear-model-eval, echo = FALSE}
+#predict the nausea variable using the test data
+stats::predict(bt_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+bt_aug_test <- tune::augment(bt_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+```
+
+Test for error in the model with Root Mean-Squared Error.    
+```{r}
+#use RMSE to evaluate linear model
+bt_error <- bt_aug_test %>% 
+  yardstick::rmse(truth = BodyTemp, .pred)
+bt_error$title <- "Error for all variables"
+
+```
+
+
+```{r linear-model-setup2}
+
+#initiate a new recipe using 'recipe' function
+rn_rec <- recipes::recipe(BodyTemp ~ RunnyNose, data = train_data)
+
+#build a model specfiication using 'parsnip' package
+rn_mod <- parsnip::linear_reg() %>%
+          parsnip::set_engine("lm")
+
+#use 'workflows' package to create a simple workflow that fits a logistic model to all predictors using glm function
+rn_wflow <- workflows::workflow() %>%
+                workflows::add_model(lm_mod) %>%
+                workflows::add_recipe(rn_rec)
+rn_wflow
+#0 recipe steps?
+
+#use function to prepare the recipe and train the model from the resulting predictors
+rn_fit <- rn_wflow %>%
+                parsnip::fit(data = train_data)
+
+#create tibble for model fit using broom and extract
+rn_fit %>%
+  workflowsets::extract_fit_parsnip() %>%
+  broom::tidy()
+
+#create tibble for model fit using broom and extract
+#use mutate_if to reduce the number of decimal places
+#increase number of decimal places to see significant p-values
+rn_tibble <- rn_fit %>%
+                  workflowsets::extract_fit_parsnip() %>%
+                  broom::tidy() %>%
+                  dplyr::mutate_if(is.numeric, round, 6)
+rn_tibble
+```
+
+Find the Root Mean-Squared Error for this model. 
+
+The RMSE for the Runny Nose model is slightly lower than the RMSE for the model which tests all variables, so we can conclude that it is slightly better at predicting body temperature. 
+
+```{r runny_nose_eval}
+#predict the nausea variable using the test data
+stats::predict(rn_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#predict the probability rather than just the category of variable
+rn_aug_test <- tune::augment(rn_fit, test_data)
+#warning is expected as there are colinear/nested variables contained in the dataset
+
+#use RMSE to evaluate linear model
+
+rn_error <- rn_aug_test %>% 
+  yardstick::rmse(truth = BodyTemp, .pred)
+
+rn_error$title <- "Error for Runny Nose Model"
+
+error <- bind_rows(bt_error,rn_error)
+
+error
+```
