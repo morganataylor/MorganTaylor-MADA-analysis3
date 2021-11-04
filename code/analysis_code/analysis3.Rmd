@@ -1,0 +1,142 @@
+---
+title: "Module 11 Exercise (Analysis #3)"
+author: "Morgan Taylor"
+date: "11/5/2021"
+output: html_document
+---
+
+# Module 11: Machine Learning Models 1
+
+This RMD corresponds to the assignment in [Module 11 for MADA 2021](https://andreashandel.github.io/MADAcourse/Assessment_ML_Models_1.html). It loads the processed data and fits a three machine learning models after some data pre-processing.
+
+<br>
+
+## Libraries required:
+* here: for data loading/saving
+* tidyverse: for data management
+* tidymodels: for data modeling
+* skimr: for variable summaries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#libraries required
+library(here) #for data loading/saving
+library(tidyverse) #for data management
+library(tidymodels) #for data modeling
+library(skimr) #for variable summaries
+
+#set global environment to avoid scientific notation
+options(scipen = 999)
+```
+
+<br>
+
+## Load Data
+Load the processed data from the `processed_data` folder in the project file.
+```{r load data}
+#path to data
+#note the use of the here() package and not absolute paths
+data_location <- here::here("data","processed_data","processeddata.rds")
+
+#load data. 
+data <- readRDS(data_location)
+
+#summary of data using skimr package
+skimr::skim(data)
+```
+
+<br>
+
+## Pre-processing
+There are two steps in this pre-processing: (1) feature removal and (2) addressing low ("near-zero") variance predictors.
+
+**Feature Variable Removal**
+In the output above, there are three variables that have both a severity score and a yes/no feature: weakness, cough, and myalgia. There are actually two variables for cough yes/no. These variables are strongly correlated and therefore affect model performance. Solution: remove all yes/no versions of variables for which a severity score exists.
+```{r}
+#variable names to remove: WeaknessYN, MyalgiaYN, CoughYN, CoughYN2
+featadj_data <- dplyr::select(data, -c(WeaknessYN, MyalgiaYN, CoughYN, CoughYN2))
+```
+
+These severity scores are also ordered, so we need to specify the order: None < Mild < Moderate < Severe.
+```{r}
+#myalgia
+featadj_data$Myalgia <- ordered(featadj_data$Myalgia, labels = c("None", "Mild", "Moderate", "Severe"))
+
+#weakness
+featadj_data$Weakness <- ordered(featadj_data$Weakness, labels = c("None", "Mild", "Moderate", "Severe"))
+
+#cough
+featadj_data$CoughIntensity <- ordered(featadj_data$CoughIntensity, labels = c("None", "Mild", "Moderate", "Severe"))
+
+#double check to confirm code worked
+skimr::skim(featadj_data)
+```
+
+<br>
+
+**Low ("near-zero") variance predictors**
+The skimr output shows there are some predictors that are fairly unbalanced with most patients reporting `no` and only a few `yes`. This can be handled automatically in `tidymodels` with `step_nzv()`, but it can be better to do it manually to ensure scientific relevance. Here, we will remove binary predictors that have <50 entries in one category. According to the `skimr::skim` output, there are two: `Hearing` and `Vision`.
+```{r}
+#drop Hearing and Vision from the dataset to create processed dataset for ML analysis
+ML_processed <- dplyr::select(featadj_data, -c(Hearing, Vision))
+```
+
+<br>
+
+## Analysis Code
+Eventually we will rearrange the analysis files and scripts, but for the purposes of documentation, this is the analysis code for this exercise.
+
+Here, we are focusing on a single outcome: BodyTemp (continuous). Therefore, these will be regression models, so we can compare using RMSE.
+
+<br>
+
+**Data Setup**
+Following the parameters determined in the assignment guidelines:
+* Set the random seed to `123`
+* Split the dataset into 70% training, 30% testing with `BodyTemp` as stratification
+* 5-fold cross validation, 5 times repeated, stratified on `BodyTemp` for the CV folds
+* Create a recipe for data and fitting that codes categorical variables as dummy variables
+```{r}
+#set random seed to 123
+set.seed(123)
+
+#split dataset into 70% training, 30% testing
+#use BodyTemp as stratification
+data_split <- rsample::initial_split(ML_processed, prop = 7/10,
+                                     strata = BodyTemp)
+
+#create dataframes for the two sets:
+train_data <- rsample::training(data_split)
+test_data <- rsample::testing(data_split)
+
+#training set proportions by BodyTemp
+train_data %>%
+  dplyr::count(BodyTemp) %>%
+  dplyr::mutate(prop = n / sum(n))
+
+#testing set proportions by BodyTemp
+test_data %>%
+  dplyr::count(BodyTemp) %>%
+  dplyr::mutate(prop = n / sum(n))
+
+#5-fold cross validation, 5 times repeated, stratified on `BodyTemp` for the CV folds
+folds <- rsample::vfold_cv(train_data,
+                           v = 5,
+                           repeats = 5,
+                           strata = BodyTemp)
+  
+#create recipe that codes categorical variables as dummy variables
+flu_rec <- recipes::recipe(BodyTemp ~ ., data = train_data) %>%
+           recipes::step_dummy(all_nominal(), one_hot = TRUE)
+```
+
+<br>
+
+**Null model performance**
+Determine the performance of a null model (i.e. one with no predictors). For a continuous outcome and RMSE as the metric, a null model is one that predicts the mean of the outcome. Compute the RMSE for both training and test data for such a model.
+```{r}
+lm_mod <- parsnip::linear_reg() %>%
+          parsnip::set_engine("lm")
+
+null_fit <- lm_mod %>%
+            fit(BodyTemp ~ , data = train_data)
+```

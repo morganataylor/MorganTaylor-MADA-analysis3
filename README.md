@@ -19,6 +19,12 @@ This repository is created from a template for a data analysis project using R, 
 * The `processing_code` folder contains an R script which load the raw data, perform a bit of cleaning, and save the result in the `processed_data` folder.
 * The `analysis_code` folder contains three different codes to analyze the data. See the `readme.md` in the folder for more information.
 
+# Repository navigation and replication
+
+* Start with the `processing_code` folder in the `code` folder to import and clean/wrangle the raw data.
+* Follow the `readme.md` file in the `code` folder to follow analysis coding order.
+* The scripts and markdown files will save the results of the analysis in the `results` folder.
+
 # Data information
 
 * The raw data for this exercise comes from the following citation:

@@ -45,3 +45,14 @@ analysis2.Rmd
  (2) workflow creation and model fitting
  (3) model evaluation with all predictors
  (4) model evaluation with only main predictor
+ 
+ analysis3.Rmd
+ * this script fits the data to 3 machine learning models: tree, LASSO, and random forest
+ * it also includes some pre-processing (mainly feature removal)
+ * outcome of interest = BodyTemp
+ * overall steps for each model tuning and fitting:
+  (1) model specification
+  (2) workflow definition
+  (3) tuning grid specification
+  (4) tuning using cross-validation and the `tune_grid()` function
+* the chosen best model is then evaluated on the test data
