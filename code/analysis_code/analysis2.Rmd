@@ -311,7 +311,7 @@ bt_error$title <- "Error for all variables"
 #initiate a new recipe using 'recipe' function
 rn_rec <- recipes::recipe(BodyTemp ~ RunnyNose, data = train_data)
 
-#build a model specfiication using 'parsnip' package
+#build a model specification using 'parsnip' package
 rn_mod <- parsnip::linear_reg() %>%
           parsnip::set_engine("lm")
 

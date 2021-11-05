@@ -20,6 +20,7 @@ This RMD corresponds to the assignment in [Module 11 for MADA 2021](https://andr
 * rpart.plot: for visualizing a decision tree
 * vip: for variable importance plots
 * glmnet: for lasso models
+* doParallel: for parallel backend for tuning processes
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 #libraries required
@@ -31,9 +32,16 @@ library(broom.mixed) #for converting bayesian models to tidy tibbles
 library(rpart.plot) #for visualizing a decision tree
 library(vip) #for variable importance plots
 library(glmnet) #for lasso methods
+library(doParallel) #for parallel backend tuning
 
 #set global environment to avoid scientific notation
 options(scipen = 999)
+
+#fix doParallel error
+unregister_dopar <- function() {
+     env <- foreach:::.foreachGlobals
+     rm(list=ls(name=env), pos=env)
+}
 ```
 
 <br>
@@ -134,7 +142,7 @@ folds <- rsample::vfold_cv(train_data,
   
 #create recipe that codes categorical variables as dummy variables
 flu_rec <- recipes::recipe(BodyTemp ~ ., data = train_data) %>%
-           recipes::step_dummy(all_nominal(), one_hot = TRUE)
+           recipes::step_dummy(all_nominal_predictors())
 ```
 
 <br>
@@ -167,26 +175,182 @@ null_test <- null_wflow %>%
 #summary of null model with test data to get mean (which in this case is the RMSE)
 null_test_sum <- broom.mixed::tidy(null_test)
 null_test_sum
+
+#RMSE for training data
+null_RMSE_train <- tibble::tibble(
+                      estimate = rmse_vec(truth = train_data$BodyTemp,
+                                          estimate = rep(mean(train_data$BodyTemp), nrow(train_data))),
+                      SE = " ",
+                      model = "Null - Train")
+
+#RMSE for testing data
+null_RMSE_test <- tibble::tibble(
+                      estimate = rmse_vec(truth = test_data$BodyTemp,
+                                          estimate = rep(mean(test_data$BodyTemp), nrow(test_data))),
+                      SE = " ",
+                      model = "Null - Test")
+
 ```
 
 **Tree Model**
 Most of the code for this section comes from the [TidyModels Tutorial for Tuning](https://www.tidymodels.org/start/tuning/).
-
 *1. Model Specification*
 ```{r}
+#run parallels to determine number of cores
+cores <- parallel::detectCores() - 1
+cores
 
+cl <- makeCluster(cores)
+
+registerDoParallel(cl)
+
+#define the tree model
+tree_mod <-
+  parsnip::decision_tree(
+    cost_complexity = tune(),
+    tree_depth = tune(),
+    min_n = tune()
+  ) %>%
+  parsnip::set_engine("rpart") %>%
+  parsnip::set_mode("regression")
+
+#use the recipe specified earlier (line 133)
 ```
 
 *2. Workflow Definition*
+```{r}
+#define workflow for tree
+tree_wflow <- workflows::workflow() %>%
+               workflows::add_model(tree_mod) %>%
+               workflows::add_recipe(flu_rec)
+```
 
 *3. Tuning Grid Specification*
+```{r}
+#tuning grid specification
+tree_grid <- dials::grid_regular(cost_complexity(),
+                                 tree_depth(),
+                                 min_n(),
+                                 levels = 10)
+
+#tree depth
+tree_grid %>%
+  dplyr::count(tree_depth)
+```
 
 *4. Tuning Using Cross-Validation and the `tune_grid()` function*
+```{r}
+#tune the model with previously specified cross-validation and RMSE as target metric
+tree_res <- tree_wflow %>%
+                tune::tune_grid(resamples = folds,
+                                grid = tree_grid,
+                                control = control_grid(verbose = TRUE),
+                                metrics = yardstick::metric_set(rmse))
+
+#collect metrics
+tree_res %>% workflowsets::collect_metrics()
+
+#default visualization
+tree_res %>% autoplot()
+
+#more detailed plot
+tree_res %>%
+  workflowsets::collect_metrics() %>%
+  dplyr::mutate(tree_depth = factor(tree_depth)) %>%
+  ggplot2::ggplot(aes(cost_complexity, mean, color = tree_depth)) +
+           geom_line(size = 1.5, alpha = 0.6) +
+           geom_point(size = 2) +
+           facet_wrap(~ .metric, scales = "free", nrow = 2) +
+           scale_x_log10(labels = scales::label_number()) +
+           scale_color_viridis_d(option = "plasma", begin = 0.9, end = 0)
+
+#turn off parallel cluster
+stopCluster(cl)
+doParallel::stopImplicitCluster()
+unregister_dopar()
+
+```
+
+*5. Identify Best Model*
+```{r}
+#select the tree model with the lowest rmse
+tree_lowest_rmse <- tree_res %>%
+                        tune::select_best("rmse")
+
+#finalize the workflow by using the selected lasso model
+best_tree_wflow <- tree_wflow %>%
+                      tune::finalize_workflow(tree_lowest_rmse)
+best_tree_wflow
+
+#one last fit on the training data
+best_tree_fit <- best_tree_wflow %>%
+                    parsnip::fit(data = train_data)
+
+#create a table of model fit
+tree_tibble <- best_tree_fit %>%
+                    workflowsets::extract_fit_parsnip() %>%
+                    broom::tidy() %>%
+                    dplyr::mutate_if(is.numeric, round, 4)
+tree_tibble
+
+
+```
+
+*6. Model evaluation*
+```{r}
+#plot the tree
+rpart.plot::rpart.plot(x = workflowsets::extract_fit_parsnip(best_tree_fit)$fit,
+                       roundint = F,
+                       type = 5,
+                       digits = 5,
+                       main = "Selected Tree Model")
+
+#find predictions and intervals
+tree_resid <- best_tree_fit %>%
+                  broom.mixed::augment(new_data = train_data) %>%
+                  dplyr::select(.pred, BodyTemp) %>%
+                  dplyr::mutate(.resid = BodyTemp - .pred)
+
+#plot model predictions from tuned model versus actual outcomes
+#now use ggplot
+ggplot2::ggplot(tree_resid, aes(x = BodyTemp, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "Decision Tree Fit: Predicted vs. Actual Body Temperature",
+        x = "Actual Body Temperature (F)",
+        y = "Predicted Body Temperature (F)")
+
+#plot model with residuals
+ggplot2::ggplot(tree_resid, aes(x = .pred, y = .resid))+
+  geom_hline(yintercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "Decision Tree Fit: Residuals vs. Fitted Body Temperature",
+        x = "Fitted Body Temperature (F)",
+        y = "Residual")
+
+#print model performance
+tree_res %>%
+  tune::show_best(n = 10) %>%
+  dplyr::select(rmse = mean, std_err, penalty) %>%
+  dplyr::mutate(rmse = round(rmse, 3),
+                std_err = round(std_err, 4),
+                cost_complexity = scales::scientific(cost_complexity))
+#this shows the 10 best performing hyperparameter sets
+
+#compare model performance to null model
+tree_RMSE <- lasso_res %>%
+                tune::show_best(n = 1) %>%
+                dplyr::transmute(
+                  rmse = round(mean, 3),
+                  SE = round(std_err, 4),
+                  model = "LASSO") %>%
+               dplyr::bind_rows(null_RMSE_train)
+```
 
 <br>
 
 **LASSO Model**
-Most of the code for this section comes from the [TidyModels Tutorial Cast Study](https://www.tidymodels.org/start/case-study/).
+Most of the code for this section comes from the [TidyModels Tutorial Case Study](https://www.tidymodels.org/start/case-study/).
 *1. Model Specification*
 ```{r}
 #define the lassso model
@@ -227,7 +391,7 @@ lasso_grid %>%
 lasso_res <- lasso_wflow %>%
                 tune::tune_grid(resamples = folds,
                                 grid = lasso_grid,
-                                control = control_grid(verbose = FALSE, save_pred = TRUE),                                    metrics = metric_set(rmse))
+                                control = control_grid(verbose = TRUE, save_pred = TRUE),                                    metrics = metric_set(rmse))
 
 #look at 15 models with lowest RMSEs
 top_lasso_models <- lasso_res %>%
@@ -251,8 +415,206 @@ lasso_res %>%
 
 *5. Identify Best Model*
 ```{r}
+#select the lasso model with the lowest rmse
 lasso_lowest_rmse <- lasso_res %>%
-                        tune::select_best("rmse", maximize = FALSE)
+                        tune::select_best("rmse")
 
-best_lasso <- tune::finalize_workflow(lasso_wflow, lasso_lowest_rmse)
+#finalize the workflow by using the selected lasso model
+best_lasso_wflow <- lasso_wflow %>%
+                      tune::finalize_workflow(lasso_lowest_rmse)
+best_lasso_wflow
+
+#one last fit on the training data
+best_lasso_fit <- best_lasso_wflow %>%
+                    parsnip::fit(data = train_data)
+
+#create a table of model fit
+lasso_tibble <- best_lasso_fit %>%
+                    workflowsets::extract_fit_parsnip() %>%
+                    broom::tidy() %>%
+                    dplyr::mutate_if(is.numeric, round, 4)
+lasso_tibble
+```
+
+*6. Model evaluation*
+```{r}
+#extract model from final fit
+x_lasso <- best_lasso_fit$fit$fit$fit
+
+#plot how number of predictors included in LASSO model changes with the tuning parameter
+plot(x_lasso, "lambda")
+
+
+#find predictions and intervals
+lasso_resid <- best_lasso_fit %>%
+                  broom.mixed::augment(new_data = train_data) %>%
+                  dplyr::select(.pred, BodyTemp) %>%
+                  dplyr::mutate(.resid = BodyTemp - .pred)
+
+#plot model predictions from tuned model versus actual outcomes
+#now use ggplot
+ggplot2::ggplot(lasso_resid, aes(x = BodyTemp, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "LASSO fit: Predicted vs. Actual Body Temperature",
+        x = "Actual Body Temperature (F)",
+        y = "Predicted Body Temperature (F)")
+
+#plot model with residuals
+ggplot2::ggplot(lasso_resid, aes(x = .pred, y = .resid))+
+  geom_hline(yintercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "LASSO fit: Residuals vs. Fitted Body Temperature",
+        x = "Fitted Body Temperature (F)",
+        y = "Residual")
+
+#print model performance
+lasso_res %>%
+  tune::show_best(n = 10) %>%
+  dplyr::select(rmse = mean, std_err, penalty) %>%
+  dplyr::mutate(rmse = round(rmse, 3),
+                std_err = round(std_err, 4),
+                `log penalty` = round(log(penalty), 3),
+                .keep = "unused")
+#this shows the 10 best performing hyperparameter sets
+
+#compare model performance to null model
+lasso_RMSE <- lasso_res %>%
+                tune::show_best(n = 1) %>%
+                dplyr::transmute(
+                  rmse = round(mean, 3),
+                  SE = round(std_err, 4),
+                  model = "LASSO") %>%
+               dplyr::bind_rows(tree_RMSE)
+```
+
+<br>
+
+**Random Forest Model**
+Most of the code for this section comes from the [TidyModels Tutorial Case Study](https://www.tidymodels.org/start/case-study/).
+*1. Model Specification*
+```{r}
+#define the RF model
+rf_mod <-
+  parsnip::rand_forest(mtry = tune(),
+                       min_n = tune(),
+                       trees = 1000) %>%
+  parsnip::set_engine("ranger", 
+                      num.threads = cores,
+                      importance = "permutation") %>%
+  parsnip::set_mode("regression")
+
+#use the recipe specified earlier (line 133)
+
+#show what will be tuned
+rf_mod %>% tune::parameters()
+```
+
+*2. Workflow Definition*
+```{r}
+#define workflow for RF regression
+RF_wflow <- workflows::workflow() %>%
+               workflows::add_model(RF_mod) %>%
+               workflows::add_recipe(flu_rec)
+```
+
+*3. Tuning Grid Specification*
+```{r}
+#tuning grid specification
+RF_grid <- expand.grid(mtry = c(3, 4, 5, 6),
+                       min_n = c(40, 50, 60),
+                       trees = c(500, 100))
+```
+
+*4. Tuning Using Cross-Validation and the `tune_grid()` function*
+```{r}
+#tune the model with previously specified cross-validation and RMSE as target metric
+RF_res <- RF_wflow %>%
+              tune::tune_grid(resamples = folds,
+                              grid = RF_grid,
+                              control = control_grid(verbose = TRUE, save_pred = TRUE),
+                              metrics = metric_set(rmse))
+
+#look at top 5 RF models
+top_RF_models <- RF_res %>%
+                    tune::show_best("rmse", n = 5)
+top_RF_models
+
+#default visualization
+RF_res %>% autoplot()
+```
+
+*5. Identify Best Model*
+```{r}
+#select the lasso model with the lowest rmse
+RF_lowest_rmse <- RF_res %>%
+                      tune::select_best("rmse")
+
+#finalize the workflow by using the selected RF model
+best_RF_wflow <- RF_wflow %>%
+                      tune::finalize_workflow(RF_lowest_rmse)
+best_RF_wflow
+
+#one last fit on the training data
+best_RF_fit <- best_RF_wflow %>%
+                    parsnip::fit(data = train_data)
+
+#create a table of model fit
+RF_tibble <- best_RF_fit %>%
+                    workflowsets::extract_fit_parsnip() %>%
+                    broom::tidy() %>%
+                    dplyr::mutate_if(is.numeric, round, 4)
+RF_tibble
+```
+
+*6. Model evaluation*
+```{r}
+#extract model from final fit
+x_RF <- best_RF_fit$fit$fit$fit
+
+#plot how number of predictors included in LASSO model changes with the tuning parameter
+plot(x_lasso, "lambda")
+
+
+#find predictions and intervals
+lasso_resid <- best_lasso_fit %>%
+                  broom.mixed::augment(new_data = train_data) %>%
+                  dplyr::select(.pred, BodyTemp) %>%
+                  dplyr::mutate(.resid = BodyTemp - .pred)
+
+#plot model predictions from tuned model versus actual outcomes
+#now use ggplot
+ggplot2::ggplot(lasso_resid, aes(x = BodyTemp, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "LASSO fit: Predicted vs. Actual Body Temperature",
+        x = "Actual Body Temperature (F)",
+        y = "Predicted Body Temperature (F)")
+
+#plot model with residuals
+ggplot2::ggplot(lasso_resid, aes(x = .pred, y = .resid))+
+  geom_hline(yintercept = 0, color = "red", lty = 2) +
+  geom_point() +
+  labs(title = "LASSO fit: Residuals vs. Fitted Body Temperature",
+        x = "Fitted Body Temperature (F)",
+        y = "Residual")
+
+#print model performance
+lasso_res %>%
+  tune::show_best(n = 10) %>%
+  dplyr::select(rmse = mean, std_err, penalty) %>%
+  dplyr::mutate(rmse = round(rmse, 3),
+                std_err = round(std_err, 4),
+                `log penalty` = round(log(penalty), 3),
+                .keep = "unused")
+#this shows the 10 best performing hyperparameter sets
+
+#compare model performance to null model
+lasso_RMSE <- lasso_res %>%
+                tune::show_best(n = 1) %>%
+                dplyr::transmute(
+                  rmse = round(mean, 3),
+                  SE = round(std_err, 4),
+                  model = "LASSO") %>%
+               dplyr::bind_rows(tree_RMSE)
 ```
