@@ -16,6 +16,10 @@ This RMD corresponds to the assignment in [Module 11 for MADA 2021](https://andr
 * tidyverse: for data management
 * tidymodels: for data modeling
 * skimr: for variable summaries
+* broom.mixed: for converting bayesian models to tidy tibbles
+* rpart.plot: for visualizing a decision tree
+* vip: for variable importance plots
+* glmnet: for lasso models
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 #libraries required
@@ -23,6 +27,10 @@ library(here) #for data loading/saving
 library(tidyverse) #for data management
 library(tidymodels) #for data modeling
 library(skimr) #for variable summaries
+library(broom.mixed) #for converting bayesian models to tidy tibbles
+library(rpart.plot) #for visualizing a decision tree
+library(vip) #for variable importance plots
+library(glmnet) #for lasso methods
 
 #set global environment to avoid scientific notation
 options(scipen = 999)
@@ -134,9 +142,117 @@ flu_rec <- recipes::recipe(BodyTemp ~ ., data = train_data) %>%
 **Null model performance**
 Determine the performance of a null model (i.e. one with no predictors). For a continuous outcome and RMSE as the metric, a null model is one that predicts the mean of the outcome. Compute the RMSE for both training and test data for such a model.
 ```{r}
-lm_mod <- parsnip::linear_reg() %>%
-          parsnip::set_engine("lm")
+#create null model
+null_mod <- parsnip::null_model() %>%
+            parsnip::set_engine("parsnip") %>%
+            parsnip::set_mode("regression")
 
-null_fit <- lm_mod %>%
-            fit(BodyTemp ~ , data = train_data)
+#add recipe and model into workflow
+null_wflow <- workflows::workflow() %>%
+              workflows::add_recipe(flu_rec) %>%
+              workflows::add_model(null_mod)
+
+#"fit" model to training data
+null_train <- null_wflow %>%
+                parsnip::fit(data = train_data)
+
+#summary of null model with training data to get mean (which in this case is the RMSE)
+null_train_sum <- broom.mixed::tidy(null_train)
+null_train_sum
+
+#"fit" model to test data
+null_test <- null_wflow %>%
+                parsnip::fit(data = test_data)
+
+#summary of null model with test data to get mean (which in this case is the RMSE)
+null_test_sum <- broom.mixed::tidy(null_test)
+null_test_sum
+```
+
+**Tree Model**
+Most of the code for this section comes from the [TidyModels Tutorial for Tuning](https://www.tidymodels.org/start/tuning/).
+
+*1. Model Specification*
+```{r}
+
+```
+
+*2. Workflow Definition*
+
+*3. Tuning Grid Specification*
+
+*4. Tuning Using Cross-Validation and the `tune_grid()` function*
+
+<br>
+
+**LASSO Model**
+Most of the code for this section comes from the [TidyModels Tutorial Cast Study](https://www.tidymodels.org/start/case-study/).
+*1. Model Specification*
+```{r}
+#define the lassso model
+lasso_mod <-
+  parsnip::linear_reg(mode = "regression",
+                      penalty = tune(), 
+                      mixture = 1) %>%
+  parsnip::set_engine("glmnet")
+
+#use the recipe specified earlier (line 133)
+```
+
+*2. Workflow Definition*
+```{r}
+#define workflow for lasso regression
+lasso_wflow <- workflows::workflow() %>%
+               workflows::add_model(lasso_mod) %>%
+               workflows::add_recipe(flu_rec)
+```
+
+*3. Tuning Grid Specification*
+```{r}
+#tuning grid specification
+lasso_grid <- tibble(penalty = 10^seq(-3, 0, length.out = 30))
+
+#5 lowest penalty values
+lasso_grid %>%
+  dplyr::top_n(-5)
+
+#5 highest penalty values
+lasso_grid %>%
+  dplyr::top_n(-5)
+```
+
+*4. Tuning Using Cross-Validation and the `tune_grid()` function*
+```{r}
+#tune the model with previously specified cross-validation and RMSE as target metric
+lasso_res <- lasso_wflow %>%
+                tune::tune_grid(resamples = folds,
+                                grid = lasso_grid,
+                                control = control_grid(verbose = FALSE, save_pred = TRUE),                                    metrics = metric_set(rmse))
+
+#look at 15 models with lowest RMSEs
+top_lasso_models <- lasso_res %>%
+                      tune::show_best("rmse", n = 15) %>%
+                      dplyr::arrange(penalty)
+top_lasso_models
+
+#default visualization
+lasso_res %>% autoplot()
+
+#create a graph to see when there is a significant change in the penalty
+lasso_res %>%
+  workflowsets::collect_metrics() %>%
+  ggplot2::ggplot(aes(penalty, mean, color = .metric)) +
+  ggplot2::geom_errorbar(aes(ymin = mean - std_err,
+                             ymax = mean + std_err),
+                         alpha = 0.5) +
+  ggplot2::geom_line(size = 1.5) +
+  ggplot2::scale_x_log10()
+```
+
+*5. Identify Best Model*
+```{r}
+lasso_lowest_rmse <- lasso_res %>%
+                        tune::select_best("rmse", maximize = FALSE)
+
+best_lasso <- tune::finalize_workflow(lasso_wflow, lasso_lowest_rmse)
 ```
